@@ -1,7 +1,6 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
-using HarmonyLib;
 using LethalLib.Modules;
 using System;
 using System.Collections.Generic;
@@ -20,7 +19,6 @@ public class TheDoctor : BaseUnityPlugin
     private const string modName = "The Doctor";
     private const string modVersion = "1.0.0";
 
-    private readonly Harmony harmony = new Harmony(modGUID);
     private static readonly AssetBundle bundle = AssetBundle.LoadFromFile(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "thedoctor"));
     internal static ManualLogSource mls;
     public static ConfigFile configFile;
@@ -30,11 +28,27 @@ public class TheDoctor : BaseUnityPlugin
 
     // Items
     public static Item doctorHeart;
+    public static Item doctorEye;
+    public static Item doctorBrain;
+
+    // Hazards
+    public static GameObject doctorClone;
+
+    // Particles
+    public static GameObject darkExplosionParticle;
+    public static GameObject electroExplosionParticle;
+
+    // Audios
+    public static GameObject doctorCloneAudio;
 
     // Materials
     public static Material inertScreen;
     public static Material scanningScreen;
     public static Material foundScreen;
+
+    // Shaders
+    public static Material redShader;
+    public static Material yellowShader;
 
     public void Awake()
     {
@@ -45,6 +59,9 @@ public class TheDoctor : BaseUnityPlugin
         NetcodePatcher();
         LoadEnemies();
         LoadItems();
+        LoadHazards();
+        LoadParticles();
+        LoadAudios();
         LoadMaterials();
     }
 
@@ -66,23 +83,30 @@ public class TheDoctor : BaseUnityPlugin
 
     public static void LoadEnemies()
     {
-        EnemyType doctorBrainEnemy = bundle.LoadAsset<EnemyType>("Assets/Brain/DoctorBrainEnemy.asset");
+        EnemyType doctorBrainEnemy = bundle.LoadAsset<EnemyType>("Assets/DoctorBrainAI/DoctorBrainEnemy.asset");
         NetworkPrefabs.RegisterNetworkPrefab(doctorBrainEnemy.enemyPrefab);
-
         (Dictionary<Levels.LevelTypes, int> spawnRateByLevelType, Dictionary<string, int> spawnRateByCustomLevelType) = ConfigManager.GetEnemiesSpawns();
         Enemies.RegisterEnemy(doctorBrainEnemy,
             spawnRateByLevelType,
             spawnRateByCustomLevelType,
-            null,//bundle.LoadAsset<TerminalNode>("Assets/Brain/DoctorBrainTN.asset"),
-            null);//bundle.LoadAsset<TerminalKeyword>("Assets/Brain/DoctorBrainTK.asset"));
+            bundle.LoadAsset<TerminalNode>("Assets/DoctorBrainAI/DoctorBrainTN.asset"),
+            bundle.LoadAsset<TerminalKeyword>("Assets/DoctorBrainAI/DoctorBrainTK.asset"));
 
-        doctorCorpseEnemy = bundle.LoadAsset<EnemyType>("Assets/Corpse/DoctorCorpseEnemy.asset");
+        doctorCorpseEnemy = bundle.LoadAsset<EnemyType>("Assets/DoctorCorpseAI/DoctorCorpseEnemy.asset");
         NetworkPrefabs.RegisterNetworkPrefab(doctorCorpseEnemy.enemyPrefab);
+        Enemies.RegisterEnemy(doctorCorpseEnemy,
+            0,
+            Levels.LevelTypes.None,
+            bundle.LoadAsset<TerminalNode>("Assets/DoctorCorpseAI/DoctorCorpseTN.asset"),
+            bundle.LoadAsset<TerminalKeyword>("Assets/DoctorCorpseAI/DoctorCorpseTK.asset"));
     }
 
-    public void LoadItems() =>
-        //tt
-        doctorHeart = RegisterItem(typeof(DoctorHeart), bundle.LoadAsset<Item>("Assets/Heart/DoctorHeartItem.asset"));
+    public void LoadItems()
+    {
+        doctorHeart = RegisterItem(typeof(DoctorHeart), bundle.LoadAsset<Item>("Assets/DoctorHeart/DoctorHeartItem.asset"));
+        doctorEye = RegisterItem(typeof(DoctorEye), bundle.LoadAsset<Item>("Assets/DoctorEye/DoctorEyeItem.asset"));
+        doctorBrain = RegisterItem(typeof(DoctorBrain), bundle.LoadAsset<Item>("Assets/DoctorBrain/DoctorBrainItem.asset"));
+    }
 
     public Item RegisterItem(Type type, Item item)
     {
@@ -101,10 +125,32 @@ public class TheDoctor : BaseUnityPlugin
         return item;
     }
 
+    public void LoadHazards()
+        => doctorClone = RegisterGameObject("Assets/DoctorClone/DoctorClone.prefab");
+
+    public void LoadParticles()
+    {
+        darkExplosionParticle = RegisterGameObject("Assets/Particles/DarkExplosionParticle.prefab");
+        electroExplosionParticle = RegisterGameObject("Assets/Particles/ElectroExplosionParticle.prefab");
+    }
+
+    public void LoadAudios()
+        => doctorCloneAudio = RegisterGameObject("Assets/Audios/Assets/DoctorCloneAudio.prefab");
+
+    public GameObject RegisterGameObject(string path)
+    {
+        GameObject gameObject = bundle.LoadAsset<GameObject>(path);
+        NetworkPrefabs.RegisterNetworkPrefab(gameObject);
+        Utilities.FixMixerGroups(gameObject);
+        return gameObject;
+    }
+
     public static void LoadMaterials()
     {
-        inertScreen = bundle.LoadAsset<Material>("Assets/Corpse/Materials/MI_Doctor_Screen_Inert.mat");
-        scanningScreen = bundle.LoadAsset<Material>("Assets/Corpse/Materials/MI_Doctor_Screen_Scanning.mat");
-        foundScreen = bundle.LoadAsset<Material>("Assets/Corpse/Materials/MI_Doctor_Screen_Found.mat");
+        inertScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Inert.mat");
+        scanningScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Scanning.mat");
+        foundScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Found.mat");
+        redShader = bundle.LoadAsset<Material>("Assets/Shaders/Materials/RedMaterial.mat");
+        yellowShader = bundle.LoadAsset<Material>("Assets/Shaders/Materials/YellowMaterial.mat");
     }
 }

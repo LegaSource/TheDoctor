@@ -1,7 +1,10 @@
 ﻿using GameNetcodeStuff;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
+using TheDoctor.Behaviours.Items;
+using TheDoctor.Managers;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -9,18 +12,27 @@ namespace TheDoctor.Behaviours.Enemies;
 
 public class DoctorCorpseAI : EnemyAI
 {
-    public AudioClip[] MoveSounds = Array.Empty<AudioClip>();
-    public float moveTimer = 0f;
+    public DoctorBrainAI doctorBrain;
 
     public Transform TurnCompass;
     public SkinnedMeshRenderer skinnedMeshRenderer;
     public Collider corpseCollider;
     public Light scanLight;
+    public Light chaseLight;
 
+    public int oldBehaviourStateIndex = 0;
     public int amountHit = 0;
+    public float moveTimer = 0f;
+    public bool hasDroppedItem = false;
 
     public Coroutine attackCoroutine;
     public Coroutine hitEnemyCoroutine;
+
+    public AudioClip chaseSound;
+    public AudioClip[] moveSounds = Array.Empty<AudioClip>();
+    public AudioClip[] attackSounds = Array.Empty<AudioClip>();
+
+    public ParticleSystem explosionParticle;
 
     public enum State
     {
@@ -34,7 +46,7 @@ public class DoctorCorpseAI : EnemyAI
         base.Start();
 
         currentBehaviourStateIndex = (int)State.FREEZING;
-        creatureAnimator.SetTrigger("startRun");
+        _ = StartCoroutine(InitializeAnimatorCoroutine());
 
         skinnedMeshRenderer = GetComponentInChildren<SkinnedMeshRenderer>();
         if (skinnedMeshRenderer == null) TheDoctor.mls.LogError("SkinnedMeshRenderer not found for the DoctorCorpse");
@@ -44,9 +56,29 @@ public class DoctorCorpseAI : EnemyAI
         {
             scanLight.transform.SetParent(headBone, worldPositionStays: false);
             scanLight.transform.localPosition = Vector3.zero;
-            scanLight.transform.rotation = headBone.rotation;
+            scanLight.transform.localRotation = Quaternion.Euler(-5f, 0f, 0f);
             scanLight.gameObject.SetActive(false);
+
+            chaseLight.transform.SetParent(headBone, worldPositionStays: false);
+            chaseLight.transform.localPosition = Vector3.zero;
+            chaseLight.transform.localRotation = Quaternion.Euler(-5f, 0f, 0f);
+            chaseLight.gameObject.SetActive(false);
         }
+    }
+
+    [ClientRpc]
+    public void InitializeCorpseClientRpc(NetworkObjectReference obj)
+    {
+        if (!obj.TryGet(out NetworkObject networkObject)) return;
+        doctorBrain = networkObject.gameObject.GetComponentInChildren<DoctorBrainAI>();
+    }
+
+    public IEnumerator InitializeAnimatorCoroutine()
+    {
+        creatureAnimator.SetTrigger("startRun");
+        yield return null;
+        creatureAnimator.Play("run", 0, UnityEngine.Random.value);
+        creatureAnimator.speed = 0f;
     }
 
     public override void Update()
@@ -68,10 +100,10 @@ public class DoctorCorpseAI : EnemyAI
         if (currentBehaviourStateIndex != (int)State.CHASING) return;
 
         moveTimer -= Time.deltaTime;
-        if (MoveSounds.Length > 0 && moveTimer <= 0)
+        if (moveSounds.Length > 0 && moveTimer <= 0)
         {
-            creatureSFX.PlayOneShot(MoveSounds[UnityEngine.Random.Range(0, MoveSounds.Length)]);
-            moveTimer = 0.5f;
+            creatureSFX.PlayOneShot(moveSounds[UnityEngine.Random.Range(0, moveSounds.Length)]);
+            moveTimer = 0.4f;
         }
     }
 
@@ -98,31 +130,18 @@ public class DoctorCorpseAI : EnemyAI
     public void DoFreezing()
     {
         agent.speed = 0f;
-        creatureAnimator.speed = 0f;
         UpdateStateClientRpc();
     }
 
     public void DoScanning()
     {
         agent.speed = 0f;
-        creatureAnimator.speed = 0f;
         UpdateStateClientRpc();
-
-        ScanClientRpc();
-    }
-
-    [ClientRpc]
-    public void ScanClientRpc()
-    {
-
-        scanLight.transform.rotation = transform.rotation;
-        scanLight.gameObject.SetActive(true);
     }
 
     public void DoChasing()
     {
-        agent.speed = attackCoroutine == null ? 5f : 0f;
-        creatureAnimator.speed = 1f;
+        agent.speed = attackCoroutine == null ? ConfigManager.corpseSpeed.Value : 0f;
         UpdateStateClientRpc();
 
         SetMovingTowardsTargetPlayer(targetPlayer);
@@ -132,6 +151,9 @@ public class DoctorCorpseAI : EnemyAI
     [ClientRpc]
     public void UpdateStateClientRpc()
     {
+        if (currentBehaviourStateIndex == oldBehaviourStateIndex) return;
+        oldBehaviourStateIndex = currentBehaviourStateIndex;
+
         switch (currentBehaviourStateIndex)
         {
             case (int)State.FREEZING:
@@ -147,20 +169,23 @@ public class DoctorCorpseAI : EnemyAI
     }
 
     public void DoFreezingForClients()
-        => ConfigureClientState(TheDoctor.inertScreen, false, false);
+        => ConfigureClientState(TheDoctor.inertScreen, 0f, false, false, false);
 
     public void DoScanningForClients()
-        => ConfigureClientState(TheDoctor.scanningScreen, false, true);
+        => ConfigureClientState(TheDoctor.scanningScreen, 0f, false, true, false);
 
     public void DoChasingForClients()
-        => ConfigureClientState(TheDoctor.foundScreen, true, false);
+        => ConfigureClientState(TheDoctor.foundScreen, 1f, true, false, true);
 
-    private void ConfigureClientState(Material screenMaterial, bool isTrigger, bool isLightActive)
+    private void ConfigureClientState(Material screenMaterial, float animationSpeed, bool isTrigger, bool isScanLightActive, bool isChaseLightActive)
     {
         SetScreenMaterial(screenMaterial);
+
+        creatureAnimator.speed = animationSpeed;
         corpseCollider.isTrigger = isTrigger;
-        scanLight.gameObject.SetActive(isLightActive);
-        //scanLight.transform.rotation = transform.rotation;
+
+        scanLight.gameObject.SetActive(isScanLightActive);
+        chaseLight.gameObject.SetActive(isChaseLightActive);
     }
 
     public void SetScreenMaterial(Material screenMaterial)
@@ -201,11 +226,11 @@ public class DoctorCorpseAI : EnemyAI
     public IEnumerator AttackCoroutine(PlayerControllerB player)
     {
         creatureAnimator.SetTrigger("startAttack");
-        //creatureSFX.PlayOneShot(SwingSound);
+        creatureSFX.PlayOneShot(attackSounds[UnityEngine.Random.Range(0, attackSounds.Length)]);
         agent.speed = 0f;
         moveTowardsDestination = false;
 
-        yield return new WaitForSeconds(0.8f);
+        yield return new WaitForSeconds(0.5f);
 
         player.DamagePlayer(20, hasDamageSFX: true, callRPC: true, CauseOfDeath.Crushing);
         creatureAnimator.SetTrigger("startRun");
@@ -218,31 +243,90 @@ public class DoctorCorpseAI : EnemyAI
 
         base.HitEnemy(force, playerWhoHit, playHitSFX, hitID);
 
-        if (currentBehaviourStateIndex == (int)State.CHASING && hitEnemyCoroutine == null)
+        if (hitEnemyCoroutine == null && currentBehaviourStateIndex == (int)State.CHASING)
         {
             amountHit++;
             if (amountHit >= 2) hitEnemyCoroutine = StartCoroutine(HitEnemyCoroutine());
+        }
+        // Si FREEZING ou SCANNING, réveiller le corps
+        else if (hitEnemyCoroutine == null && (currentBehaviourStateIndex == (int)State.FREEZING || currentBehaviourStateIndex == (int)State.SCANNING))
+        {
+            if (doctorBrain.scanCoroutine != null)
+            {
+                doctorBrain.StopCoroutine(doctorBrain.scanCoroutine);
+                doctorBrain.scanCoroutine = null;
+            }
+
+            foreach (DoctorCorpseAI corpse in doctorBrain.corpses.Where(c => c != null && c.currentBehaviourStateIndex == (int)State.SCANNING))
+            {
+                corpse.creatureSFX.Stop();
+                corpse.SwitchToBehaviourStateOnLocalClient((int)State.FREEZING);
+            }
+
+            // Réveiller 2 autres corps si aucun n'est en chase
+            if (!doctorBrain.corpses.Any(c => c != null && c.currentBehaviourStateIndex == (int)State.CHASING))
+            {
+                TDUtilities.Shuffle(doctorBrain.corpses);
+                doctorBrain.corpses.Where(c => c != null && c != this)
+                    .Take(2)
+                    .ToList()
+                    .ForEach(c =>
+                    {
+                        c.targetPlayer = playerWhoHit;
+                        c.SwitchToBehaviourStateOnLocalClient((int)State.CHASING);
+                    });
+            }
+
+            targetPlayer = playerWhoHit;
+            SwitchToBehaviourStateOnLocalClient((int)State.CHASING);
         }
     }
 
     public IEnumerator HitEnemyCoroutine()
     {
+        amountHit = 0;
+        explosionParticle.Play();
         SwitchToBehaviourStateOnLocalClient((int)State.FREEZING);
-        if (IsHost || IsServer) SpawnItem();
+        if (IsHost || IsServer) SpawnDoctorItem();
+        hasDroppedItem = true;
 
-        yield return new WaitForSeconds(2f);
+        yield return new WaitForSeconds(4f);
 
+        explosionParticle.Stop();
         SwitchToBehaviourStateOnLocalClient((int)State.CHASING);
         hitEnemyCoroutine = null;
     }
 
-    public void SpawnItem()
+    public void SpawnDoctorItem()
     {
-        GameObject gameObject = Instantiate(TheDoctor.doctorHeart.spawnPrefab, transform.position + (Vector3.up * 0.5f), Quaternion.identity, StartOfRound.Instance.propsContainer);
-        GrabbableObject grabbableObject = gameObject.GetComponent<GrabbableObject>();
-        grabbableObject.fallTime = 0f;
-        grabbableObject.isInFactory = !isOutside;
+        if (hasDroppedItem) return;
+
+        List<GameObject> doctorItems = [TheDoctor.doctorHeart.spawnPrefab, TheDoctor.doctorEye.spawnPrefab];
+        GameObject gameObject = Instantiate(doctorItems[new System.Random().Next(doctorItems.Count)], transform.position + (Vector3.up * 0.5f), Quaternion.identity, StartOfRound.Instance.propsContainer);
+
+        DoctorItem doctorItem = gameObject.GetComponent<DoctorItem>();
+        doctorItem.fallTime = 0f;
+        doctorItem.isInFactory = !isOutside;
         gameObject.GetComponent<NetworkObject>().Spawn();
+
+        int value = doctorItem is DoctorEye ? UnityEngine.Random.Range(ConfigManager.eyeMinValue.Value, ConfigManager.eyeMaxValue.Value) : UnityEngine.Random.Range(ConfigManager.heartMinValue.Value, ConfigManager.heartMaxValue.Value);
+        doctorItem.InitializeDoctorItemClientRpc(doctorBrain.GetComponent<NetworkObject>(), value);
+    }
+
+    public override void KillEnemy(bool destroy = false)
+    {
+        if (IsHost || IsServer) KillExplosionServerRpc(destroy);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void KillExplosionServerRpc(bool destroy)
+        => KillExplosionClientRpc(destroy);
+
+    [ClientRpc]
+    public void KillExplosionClientRpc(bool destroy)
+    {
+        Landmine.SpawnExplosion(transform.position + Vector3.up, spawnExplosionEffect: true, 0f, 4f, 20);
+        base.KillEnemy(destroy);
     }
 
     [ServerRpc(RequireOwnership = false)]
