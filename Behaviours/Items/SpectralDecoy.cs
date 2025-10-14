@@ -6,14 +6,14 @@ namespace TheDoctor.Behaviours.Items;
 
 public class SpectralDecoy : AddonComponent
 {
-    public override void ActivateSpecialAbility()
+    public override void ActivateAddonAbility()
     {
-        if (onCooldown) return;
+        if (onCooldown || !StartOfRound.Instance.shipHasLanded) return;
 
         PlayerControllerB player = GetComponentInParent<GrabbableObject>()?.playerHeldBy;
         if (player == null) return;
 
-        StartCooldown(ConfigManager.brainAbilityCooldown.Value);
-        _ = Instantiate(TheDoctor.doctorClone, player.transform.position + (player.transform.forward * 1.5f), player.transform.rotation);
+        StartCooldown(ConfigManager.spectralDecoyCooldown.Value);
+        TheDoctorNetworkManager.Instance.SpawnSpectralDecoyEveryoneRpc((int)player.playerClientId);
     }
 }

@@ -1,6 +1,7 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using HarmonyLib;
 using LethalLib.Modules;
 using System;
 using System.Collections.Generic;
@@ -8,6 +9,7 @@ using System.IO;
 using System.Reflection;
 using TheDoctor.Behaviours.Items;
 using TheDoctor.Managers;
+using TheDoctor.Patches;
 using UnityEngine;
 
 namespace TheDoctor;
@@ -15,13 +17,16 @@ namespace TheDoctor;
 [BepInPlugin(modGUID, modName, modVersion)]
 public class TheDoctor : BaseUnityPlugin
 {
-    private const string modGUID = "Lega.TheDoctor";
-    private const string modName = "The Doctor";
-    private const string modVersion = "1.0.0";
+    internal const string modGUID = "Lega.TheDoctor";
+    internal const string modName = "The Doctor";
+    internal const string modVersion = "1.0.3";
 
+    private readonly Harmony harmony = new Harmony(modGUID);
     private static readonly AssetBundle bundle = AssetBundle.LoadFromFile(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "thedoctor"));
     internal static ManualLogSource mls;
     public static ConfigFile configFile;
+
+    public static GameObject managerPrefab = NetworkPrefabs.CreateNetworkPrefab("TheDoctorNetworkManager");
 
     // Enemies
     public static EnemyType doctorCorpseEnemy;
@@ -46,23 +51,26 @@ public class TheDoctor : BaseUnityPlugin
     public static Material scanningScreen;
     public static Material foundScreen;
 
-    // Shaders
-    public static Material redShader;
-    public static Material yellowShader;
-
     public void Awake()
     {
         mls = BepInEx.Logging.Logger.CreateLogSource("TheDoctor");
         configFile = Config;
         ConfigManager.Load();
 
+        LoadManager();
         NetcodePatcher();
         LoadEnemies();
         LoadItems();
-        LoadHazards();
-        LoadParticles();
-        LoadAudios();
+        LoadGameObjects();
         LoadMaterials();
+
+        harmony.PatchAll(typeof(StartOfRoundPatch));
+    }
+
+    public static void LoadManager()
+    {
+        Utilities.FixMixerGroups(managerPrefab);
+        _ = managerPrefab.AddComponent<TheDoctorNetworkManager>();
     }
 
     private static void NetcodePatcher()
@@ -84,6 +92,7 @@ public class TheDoctor : BaseUnityPlugin
     public static void LoadEnemies()
     {
         EnemyType doctorBrainEnemy = bundle.LoadAsset<EnemyType>("Assets/DoctorBrainAI/DoctorBrainEnemy.asset");
+        doctorBrainEnemy.probabilityCurve = ConfigManager.ParseCurveFromString();
         NetworkPrefabs.RegisterNetworkPrefab(doctorBrainEnemy.enemyPrefab);
         (Dictionary<Levels.LevelTypes, int> spawnRateByLevelType, Dictionary<string, int> spawnRateByCustomLevelType) = ConfigManager.GetEnemiesSpawns();
         Enemies.RegisterEnemy(doctorBrainEnemy,
@@ -125,17 +134,13 @@ public class TheDoctor : BaseUnityPlugin
         return item;
     }
 
-    public void LoadHazards()
-        => doctorClone = RegisterGameObject("Assets/DoctorClone/DoctorClone.prefab");
-
-    public void LoadParticles()
+    public void LoadGameObjects()
     {
         darkExplosionParticle = RegisterGameObject("Assets/Particles/DarkExplosionParticle.prefab");
         electroExplosionParticle = RegisterGameObject("Assets/Particles/ElectroExplosionParticle.prefab");
+        doctorClone = RegisterGameObject("Assets/DoctorClone/DoctorClone.prefab");
+        doctorCloneAudio = RegisterGameObject("Assets/Audios/Assets/DoctorCloneAudio.prefab");
     }
-
-    public void LoadAudios()
-        => doctorCloneAudio = RegisterGameObject("Assets/Audios/Assets/DoctorCloneAudio.prefab");
 
     public GameObject RegisterGameObject(string path)
     {
@@ -150,7 +155,5 @@ public class TheDoctor : BaseUnityPlugin
         inertScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Inert.mat");
         scanningScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Scanning.mat");
         foundScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Found.mat");
-        redShader = bundle.LoadAsset<Material>("Assets/Shaders/Materials/RedMaterial.mat");
-        yellowShader = bundle.LoadAsset<Material>("Assets/Shaders/Materials/YellowMaterial.mat");
     }
 }

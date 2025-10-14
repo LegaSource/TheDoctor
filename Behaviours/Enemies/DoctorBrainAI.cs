@@ -1,8 +1,10 @@
 ﻿using GameNetcodeStuff;
+using LegaFusionCore.Behaviours.Shaders;
+using LegaFusionCore.Managers;
+using LegaFusionCore.Utilities;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using TheDoctor.Behaviours.Items;
 using TheDoctor.Managers;
 using Unity.Netcode;
 using UnityEngine;
@@ -46,8 +48,8 @@ public class DoctorBrainAI : EnemyAI
         currentBehaviourStateIndex = (int)State.MANAGING;
         entrances = FindObjectsOfType<EntranceTeleport>().ToList();
 
-        if (IsHost || IsServer) SpawnCorpses();
-        if (player.isInsideFactory)
+        if (LFCUtilities.IsServer) SpawnCorpsesForServer();
+        if (player.isInsideFactory && ConfigManager.isInsideDialogue.Value)
         {
             GameObject audioObj = new GameObject("HackedSpeakerAudio");
             audioObj.transform.parent = player.transform;
@@ -63,24 +65,26 @@ public class DoctorBrainAI : EnemyAI
 
             Destroy(audioObj, speakerHackedSound.length);
         }
-        else
+        else if (!player.isInsideFactory && ConfigManager.isShipDialogue.Value)
         {
             StartOfRound.Instance.speakerAudioSource.PlayOneShot(speakerHackedSound);
         }
     }
 
-    private void SpawnCorpses()
+    private void SpawnCorpsesForServer()
     {
         Vector3[] positions = GetCorpsesPositions();
+        List<NetworkObject> enemiesObj = [];
         foreach (Vector3 position in positions)
         {
             GameObject gameObject = Instantiate(TheDoctor.doctorCorpseEnemy.enemyPrefab, position, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
             gameObject.GetComponentInChildren<NetworkObject>().Spawn(true);
 
             DoctorCorpseAI doctorCorpse = gameObject.GetComponent<DoctorCorpseAI>();
-            doctorCorpse.InitializeCorpseClientRpc(GetComponent<NetworkObject>());
-            corpses.Add(doctorCorpse);
+            doctorCorpse.InitializeCorpseEveryoneRpc(GetComponent<NetworkObject>());
+            enemiesObj.Add(doctorCorpse.GetComponent<NetworkObject>());
         }
+        SpawnCorpsesEveryoneRpc(enemiesObj.Select(obj => (NetworkObjectReference)obj).ToArray());
     }
 
     public Vector3[] GetCorpsesPositions()
@@ -100,14 +104,25 @@ public class DoctorBrainAI : EnemyAI
                 .ToList();
         }
 
-        TDUtilities.Shuffle(allPositions);
+        LFCUtilities.Shuffle(allPositions);
         return allPositions.Take(amount).ToArray();
+    }
+
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void SpawnCorpsesEveryoneRpc(NetworkObjectReference[] enemiesObj)
+    {
+        foreach (NetworkObjectReference obj in enemiesObj)
+        {
+            if (!obj.TryGet(out NetworkObject networkObject)) continue;
+
+            DoctorCorpseAI corpse = networkObject.gameObject.GetComponentInChildren<DoctorCorpseAI>();
+            if (corpse != null && !corpses.Contains(corpse)) corpses.Add(networkObject.gameObject.GetComponentInChildren<DoctorCorpseAI>());
+        }
     }
 
     public override void Update()
     {
         base.Update();
-
         if (isEnemyDead || StartOfRound.Instance.allPlayersDead) return;
 
         if (scanCoroutine != null) scanTimer = 0f;
@@ -117,7 +132,6 @@ public class DoctorBrainAI : EnemyAI
     public override void DoAIInterval()
     {
         base.DoAIInterval();
-
         if (isEnemyDead || StartOfRound.Instance.allPlayersDead || killCoroutine != null) return;
 
         switch (currentBehaviourStateIndex)
@@ -133,12 +147,15 @@ public class DoctorBrainAI : EnemyAI
         if (killCoroutine != null) return;
 
         List<DoctorCorpseAI> awakedCorpses = corpses.Where(c => c != null && c.currentBehaviourStateIndex == (int)DoctorCorpseAI.State.CHASING).ToList();
-        if (canLoseChase && awakedCorpses.Any())
+        if (awakedCorpses.Any())
         {
             bool isPlayerEscaped = true;
             foreach (DoctorCorpseAI awakedCorpse in awakedCorpses)
             {
-                if (Vector3.Distance(awakedCorpse.transform.position, awakedCorpse.targetPlayer.transform.position) <= 20f)
+                if (awakedCorpse?.targetPlayer != null
+                    && (!canLoseChase
+                        || Vector3.Distance(awakedCorpse.transform.position, awakedCorpse.targetPlayer.transform.position) <= 20f
+                        || Vector3.Distance(transform.position, awakedCorpse.targetPlayer.transform.position) <= 5f))
                 {
                     isPlayerEscaped = false;
                     break;
@@ -170,7 +187,7 @@ public class DoctorBrainAI : EnemyAI
 
     public IEnumerator ScanningCoroutine()
     {
-        TDUtilities.Shuffle(corpses);
+        LFCUtilities.Shuffle(corpses);
         List<DoctorCorpseAI> scanningCorpses = corpses.Where(c => c != null).Take(3).ToList();
         scanningCorpses.ForEach(c => c.SwitchToBehaviourClientRpc((int)DoctorCorpseAI.State.SCANNING));
 
@@ -197,23 +214,23 @@ public class DoctorBrainAI : EnemyAI
             }
             corpse.SwitchToBehaviourClientRpc((int)DoctorCorpseAI.State.FREEZING);
         }
+
         scanCoroutine = null;
     }
 
     public PlayerControllerB FoundClosestPlayerInRange(DoctorCorpseAI corpse)
     {
-        PlayerControllerB player = corpse.CheckLineOfSightForPlayer(60f, 20, 3);
+        PlayerControllerB player = corpse.CheckLineOfSightForPlayer(65f, 20, 3);
         return player != null && corpse.PlayerIsTargetable(player) ? player : null;
     }
 
     public override void HitEnemy(int force = 1, PlayerControllerB playerWhoHit = null, bool playHitSFX = false, int hitID = -1)
     {
-        if (isEnemyDead) return;
-
+        if (isEnemyDead || playerWhoHit == null) return;
         base.HitEnemy(force, playerWhoHit, playHitSFX, hitID);
 
         enemyHP -= force;
-        if (IsOwner)
+        if (LFCUtilities.IsServer)
         {
             corpses.ForEach(c =>
             {
@@ -230,7 +247,7 @@ public class DoctorBrainAI : EnemyAI
 
     public override void KillEnemy(bool destroy = false)
     {
-        if (IsHost || IsServer)
+        if (LFCUtilities.IsServer)
         {
             if (scanCoroutine != null)
             {
@@ -238,24 +255,19 @@ public class DoctorBrainAI : EnemyAI
                 scanCoroutine = null;
             }
 
-            KillAnimationServerRpc(destroy);
+            KillAnimationEveryoneRpc(destroy);
         }
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void KillAnimationServerRpc(bool destroy)
-        => KillAnimationClientRpc(destroy);
-
-    [ClientRpc]
-    public void KillAnimationClientRpc(bool destroy)
-        => killCoroutine ??= StartCoroutine(KillAnimationCoroutine(destroy));
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void KillAnimationEveryoneRpc(bool destroy) => killCoroutine ??= StartCoroutine(KillAnimationCoroutine(destroy));
 
     public IEnumerator KillAnimationCoroutine(bool destroy)
     {
         creatureSFX.PlayOneShot(deathSound);
         auraParticle.Play();
 
-        if (IsServer || IsHost)
+        if (LFCUtilities.IsServer)
         {
             float interval = deathSound.length / corpses.Count;
             foreach (DoctorCorpseAI corpse in corpses.ToList())
@@ -275,10 +287,10 @@ public class DoctorBrainAI : EnemyAI
         SpawnParticle(transform.position);
         Landmine.SpawnExplosion(transform.position + Vector3.up, spawnExplosionEffect: true, 6f, 6.3f);
 
-        if (IsServer || IsHost)
+        if (LFCUtilities.IsServer)
         {
             base.KillEnemy(destroy);
-            SpawnBrain();
+            _ = LFCObjectsManager.SpawnObjectForServer(TheDoctor.doctorBrain.spawnPrefab, transform.position + (Vector3.up * 0.5f));
         }
     }
 
@@ -287,7 +299,6 @@ public class DoctorBrainAI : EnemyAI
         if (isEnemyDead || camera == null || playerCamera == null) return;
 
         PlayerControllerB player = GameNetworkManager.Instance.localPlayerController;
-
         camera.enabled = !switchingBack;
         player.gameplayCamera = switchingBack ? playerCamera : camera;
         player.thisPlayerModel.shadowCastingMode = switchingBack ? ShadowCastingMode.ShadowsOnly : ShadowCastingMode.On;
@@ -295,11 +306,11 @@ public class DoctorBrainAI : EnemyAI
         if (!switchingBack)
         {
             cameraPivot.transform.LookAt(player.transform.position);
-            CustomPassManager.SetupAuraForObjects([player.gameObject], TheDoctor.yellowShader);
-            corpses.ForEach(c => CustomPassManager.SetupAuraForObjects([c.gameObject], TheDoctor.redShader));
+            CustomPassManager.SetupAuraForObjects([player.gameObject], LegaFusionCore.LegaFusionCore.wallhackShader, TheDoctor.modName, Color.yellow);
+            CustomPassManager.SetupAuraForObjects(corpses.Select(c => c.gameObject).ToArray(), LegaFusionCore.LegaFusionCore.wallhackShader, TheDoctor.modName, Color.red);
             return;
         }
-        CustomPassManager.ClearAura();
+        CustomPassManager.RemoveAuraByTag(TheDoctor.modName);
     }
 
     public void SpawnParticle(Vector3 explosionPosition)
@@ -307,14 +318,5 @@ public class DoctorBrainAI : EnemyAI
         GameObject particleObject = Instantiate(TheDoctor.electroExplosionParticle, explosionPosition + transform.up, Quaternion.identity);
         ParticleSystem explosionParticle = particleObject.GetComponent<ParticleSystem>();
         Destroy(particleObject, explosionParticle.main.duration + explosionParticle.main.startLifetime.constantMax);
-    }
-
-    public void SpawnBrain()
-    {
-        GameObject gameObject = Instantiate(TheDoctor.doctorBrain.spawnPrefab, transform.position + (Vector3.up * 0.5f), Quaternion.identity, StartOfRound.Instance.propsContainer);
-        DoctorBrain doctorBrainItem = gameObject.GetComponent<DoctorBrain>();
-        doctorBrainItem.fallTime = 0f;
-        doctorBrainItem.isInFactory = !isOutside;
-        gameObject.GetComponent<NetworkObject>().Spawn();
     }
 }

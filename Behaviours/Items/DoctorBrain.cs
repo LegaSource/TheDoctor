@@ -1,4 +1,4 @@
-﻿using LegaFusionCore;
+﻿using LegaFusionCore.Utilities;
 using TheDoctor.Managers;
 using Unity.Netcode;
 using UnityEngine;
@@ -12,28 +12,13 @@ public class DoctorBrain : PhysicsProp
         base.Start();
 
         if (ConfigManager.brainSpecialAbility.Value) LFCUtilities.SetAddonComponent<SpectralDecoy>(this, Constants.SPECTRAL_DECOY);
-        if (IsHost || IsServer)
+        if (LFCUtilities.IsServer)
         {
             int value = Random.Range(ConfigManager.brainMinValue.Value, ConfigManager.brainMaxValue.Value);
-            SetScrapValueClientRpc(value);
+            SetScrapValueEveryoneRpc(value);
         }
     }
 
-    [ClientRpc]
-    public void SetScrapValueClientRpc(int value)
-        => SetScrapValue(value);
-
-    public override void ItemActivate(bool used, bool buttonDown = true)
-    {
-        base.ItemActivate(used, buttonDown);
-        ActivateSpecialAbilityServerRpc();
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    public void ActivateSpecialAbilityServerRpc()
-        => ActivateSpecialAbilityClientRpc();
-
-    [ClientRpc]
-    public void ActivateSpecialAbilityClientRpc()
-        => GetComponent<SpectralDecoy>()?.ActivateSpecialAbility();
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void SetScrapValueEveryoneRpc(int value) => SetScrapValue(value);
 }

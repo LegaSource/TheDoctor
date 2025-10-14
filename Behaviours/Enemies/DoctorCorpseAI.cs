@@ -1,4 +1,5 @@
 ﻿using GameNetcodeStuff;
+using LegaFusionCore.Utilities;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -66,8 +67,8 @@ public class DoctorCorpseAI : EnemyAI
         }
     }
 
-    [ClientRpc]
-    public void InitializeCorpseClientRpc(NetworkObjectReference obj)
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void InitializeCorpseEveryoneRpc(NetworkObjectReference obj)
     {
         if (!obj.TryGet(out NetworkObject networkObject)) return;
         doctorBrain = networkObject.gameObject.GetComponentInChildren<DoctorBrainAI>();
@@ -130,26 +131,26 @@ public class DoctorCorpseAI : EnemyAI
     public void DoFreezing()
     {
         agent.speed = 0f;
-        UpdateStateClientRpc();
+        UpdateStateEveryoneRpc();
     }
 
     public void DoScanning()
     {
         agent.speed = 0f;
-        UpdateStateClientRpc();
+        UpdateStateEveryoneRpc();
     }
 
     public void DoChasing()
     {
         agent.speed = attackCoroutine == null ? ConfigManager.corpseSpeed.Value : 0f;
-        UpdateStateClientRpc();
+        UpdateStateEveryoneRpc();
 
         SetMovingTowardsTargetPlayer(targetPlayer);
         moveTowardsDestination = attackCoroutine == null;
     }
 
-    [ClientRpc]
-    public void UpdateStateClientRpc()
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void UpdateStateEveryoneRpc()
     {
         if (currentBehaviourStateIndex == oldBehaviourStateIndex) return;
         oldBehaviourStateIndex = currentBehaviourStateIndex;
@@ -168,14 +169,9 @@ public class DoctorCorpseAI : EnemyAI
         }
     }
 
-    public void DoFreezingForClients()
-        => ConfigureClientState(TheDoctor.inertScreen, 0f, false, false, false);
-
-    public void DoScanningForClients()
-        => ConfigureClientState(TheDoctor.scanningScreen, 0f, false, true, false);
-
-    public void DoChasingForClients()
-        => ConfigureClientState(TheDoctor.foundScreen, 1f, true, false, true);
+    public void DoFreezingForClients() => ConfigureClientState(TheDoctor.inertScreen, 0f, false, false, false);
+    public void DoScanningForClients() => ConfigureClientState(TheDoctor.scanningScreen, 0f, false, true, false);
+    public void DoChasingForClients() => ConfigureClientState(TheDoctor.foundScreen, 1f, true, false, true);
 
     private void ConfigureClientState(Material screenMaterial, float animationSpeed, bool isTrigger, bool isScanLightActive, bool isChaseLightActive)
     {
@@ -212,15 +208,11 @@ public class DoctorCorpseAI : EnemyAI
         PlayerControllerB player = MeetsStandardPlayerCollisionConditions(other);
         if (player == null || player != GameNetworkManager.Instance.localPlayerController) return;
 
-        AttackServerRpc((int)player.playerClientId);
+        AttackEveryoneRpc((int)player.playerClientId);
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void AttackServerRpc(int playerId)
-        => AttackClientRpc(playerId);
-
-    [ClientRpc]
-    public void AttackClientRpc(int playerId)
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void AttackEveryoneRpc(int playerId)
         => attackCoroutine ??= StartCoroutine(AttackCoroutine(StartOfRound.Instance.allPlayerObjects[playerId].GetComponent<PlayerControllerB>()));
 
     public IEnumerator AttackCoroutine(PlayerControllerB player)
@@ -239,7 +231,7 @@ public class DoctorCorpseAI : EnemyAI
 
     public override void HitEnemy(int force = 1, PlayerControllerB playerWhoHit = null, bool playHitSFX = false, int hitID = -1)
     {
-        if (isEnemyDead) return;
+        if (isEnemyDead || playerWhoHit == null) return;
 
         base.HitEnemy(force, playerWhoHit, playHitSFX, hitID);
 
@@ -266,7 +258,7 @@ public class DoctorCorpseAI : EnemyAI
             // Réveiller 2 autres corps si aucun n'est en chase
             if (!doctorBrain.corpses.Any(c => c != null && c.currentBehaviourStateIndex == (int)State.CHASING))
             {
-                TDUtilities.Shuffle(doctorBrain.corpses);
+                LFCUtilities.Shuffle(doctorBrain.corpses);
                 doctorBrain.corpses.Where(c => c != null && c != this)
                     .Take(2)
                     .ToList()
@@ -287,7 +279,7 @@ public class DoctorCorpseAI : EnemyAI
         amountHit = 0;
         explosionParticle.Play();
         SwitchToBehaviourStateOnLocalClient((int)State.FREEZING);
-        if (IsHost || IsServer) SpawnDoctorItem();
+        if (LFCUtilities.IsServer) SpawnDoctorItem();
         hasDroppedItem = true;
 
         yield return new WaitForSeconds(4f);
@@ -310,30 +302,21 @@ public class DoctorCorpseAI : EnemyAI
         gameObject.GetComponent<NetworkObject>().Spawn();
 
         int value = doctorItem is DoctorEye ? UnityEngine.Random.Range(ConfigManager.eyeMinValue.Value, ConfigManager.eyeMaxValue.Value) : UnityEngine.Random.Range(ConfigManager.heartMinValue.Value, ConfigManager.heartMaxValue.Value);
-        doctorItem.InitializeDoctorItemClientRpc(doctorBrain.GetComponent<NetworkObject>(), value);
+        doctorItem.InitializeDoctorItemEveryoneRpc(doctorBrain.GetComponent<NetworkObject>(), value);
     }
 
     public override void KillEnemy(bool destroy = false)
     {
-        if (IsHost || IsServer) KillExplosionServerRpc(destroy);
+        if (LFCUtilities.IsServer) KillExplosionEveryoneRpc(destroy);
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void KillExplosionServerRpc(bool destroy)
-        => KillExplosionClientRpc(destroy);
-
-    [ClientRpc]
-    public void KillExplosionClientRpc(bool destroy)
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void KillExplosionEveryoneRpc(bool destroy)
     {
         Landmine.SpawnExplosion(transform.position + Vector3.up, spawnExplosionEffect: true, 0f, 4f, 20);
         base.KillEnemy(destroy);
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void DoAnimationServerRpc(string animationState)
-        => DoAnimationClientRpc(animationState);
-
-    [ClientRpc]
-    public void DoAnimationClientRpc(string animationState)
-        => creatureAnimator.SetTrigger(animationState);
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void DoAnimationEveryoneRpc(string animationState) => creatureAnimator.SetTrigger(animationState);
 }

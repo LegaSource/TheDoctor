@@ -17,7 +17,6 @@ public class DoctorHeart : DoctorItem
     public override void Update()
     {
         base.Update();
-
         if (hasBeenUsed || !isTracking || playerHeldBy == null || doctorBrain == null) return;
 
         float distance = Vector3.Distance(transform.position, doctorBrain.transform.position);

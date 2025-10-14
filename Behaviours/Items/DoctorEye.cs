@@ -1,6 +1,4 @@
-﻿using System.Linq;
-using TheDoctor.Behaviours.Enemies;
-using TheDoctor.Managers;
+﻿using TheDoctor.Managers;
 using UnityEngine;
 
 namespace TheDoctor.Behaviours.Items;
@@ -43,39 +41,13 @@ public class DoctorEye : DoctorItem
     public override void StartTrackingForClients()
     {
         base.StartTrackingForClients();
-
         itemProperties.toolTips[0] = "Switch camera : [LMB]";
-
-        if (playerHeldBy == null) return;
-
-        doctorBrain.canLoseChase = false;
-        DoctorCorpseAI chasingCorpse = doctorBrain.corpses.FirstOrDefault(c => c != null);
-        foreach (DoctorCorpseAI corpse in doctorBrain.corpses)
-        {
-            if (corpse == null) continue;
-            if (corpse != chasingCorpse)
-            {
-                corpse.targetPlayer = null;
-                corpse.SwitchToBehaviourStateOnLocalClient((int)DoctorCorpseAI.State.FREEZING);
-                continue;
-            }
-
-            corpse.targetPlayer = playerHeldBy;
-            corpse.SwitchToBehaviourStateOnLocalClient((int)DoctorCorpseAI.State.CHASING);
-        }
     }
 
     public override void ItemDeactivate()
     {
         base.ItemDeactivate();
-
         doctorBrain.SwitchCamera(true);
-        doctorBrain.canLoseChase = false;
-        foreach (DoctorCorpseAI corpse in doctorBrain.corpses.Where(c => c != null && c.currentBehaviourStateIndex != (int)DoctorCorpseAI.State.CHASING).Take(2).ToList())
-        {
-            corpse.targetPlayer = playerHeldBy;
-            corpse.SwitchToBehaviourStateOnLocalClient((int)DoctorCorpseAI.State.CHASING);
-        }
     }
 
     public override void PocketItem()

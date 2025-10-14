@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using TheDoctor.Behaviours.Enemies;
 using Unity.Netcode;
@@ -14,8 +15,8 @@ public class DoctorItem : PhysicsProp
 
     public DoctorBrainAI doctorBrain;
 
-    [ClientRpc]
-    public void InitializeDoctorItemClientRpc(NetworkObjectReference obj, int value)
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void InitializeDoctorItemEveryoneRpc(NetworkObjectReference obj, int value)
     {
         if (!obj.TryGet(out NetworkObject networkObject)) return;
 
@@ -23,18 +24,22 @@ public class DoctorItem : PhysicsProp
         SetScrapValue(value);
     }
 
+    public override void GrabItem()
+    {
+        base.GrabItem();
+
+        if (playerHeldBy == null || playerHeldBy != GameNetworkManager.Instance.localPlayerController) return;
+        HUDManager.Instance.DisplayTip(Constants.MSG_INFORMATION, Constants.MSG_DOCTOR_ITEM_TIP);
+    }
+
     public override void ItemActivate(bool used, bool buttonDown = true)
     {
         base.ItemActivate(used, buttonDown);
-        if (!hasBeenUsed && !isTracking) StartTrackingServerRpc();
+        if (!hasBeenUsed && !isTracking) StartTrackingEveryoneRpc();
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void StartTrackingServerRpc()
-        => StartTrackingClientRpc();
-
-    [ClientRpc]
-    public void StartTrackingClientRpc()
+    [Rpc(SendTo.Everyone, RequireOwnership = false)]
+    public void StartTrackingEveryoneRpc()
     {
         if (doctorBrain == null)
         {
@@ -47,7 +52,23 @@ public class DoctorItem : PhysicsProp
     }
 
     public virtual void StartTrackingForClients()
-        => _ = StartCoroutine(StartTrackingCoroutine());
+    {
+        _ = StartCoroutine(StartTrackingCoroutine());
+
+        doctorBrain.canLoseChase = false;
+        IEnumerable<DoctorCorpseAI> corpses = [];
+        if (!doctorBrain.corpses.Any(c => c != null && c.currentBehaviourStateIndex == (int)DoctorCorpseAI.State.CHASING))
+        {
+            corpses = doctorBrain.corpses
+                .Where(c => c != null && c.currentBehaviourStateIndex != (int)DoctorCorpseAI.State.CHASING)
+                .Take(3);
+        }
+        foreach (DoctorCorpseAI corpse in corpses)
+        {
+            corpse.targetPlayer = playerHeldBy;
+            corpse.SwitchToBehaviourStateOnLocalClient((int)DoctorCorpseAI.State.CHASING);
+        }
+    }
 
     public IEnumerator StartTrackingCoroutine()
     {
@@ -64,7 +85,7 @@ public class DoctorItem : PhysicsProp
 
     public override void SetControlTipsForItem()
     {
-        if (playerHeldBy == null || isPocketed || playerHeldBy != GameNetworkManager.Instance.localPlayerController) return;
+        if (isPocketed || playerHeldBy == null || playerHeldBy != GameNetworkManager.Instance.localPlayerController) return;
 
         string toolTip = isTracking ? $"[Time Left : {currentTimeLeft}]" : "";
         HUDManager.Instance.ChangeControlTipMultiple(itemProperties.toolTips.Concat([toolTip]).ToArray(), holdingItem: true, itemProperties);
@@ -74,6 +95,7 @@ public class DoctorItem : PhysicsProp
     {
         hasBeenUsed = true;
         isTracking = false;
+        doctorBrain.canLoseChase = true;
         SetControlTipsForItem();
     }
 }

@@ -13,4 +13,7 @@ public class Constants
     public const string SPECTRAL_DECOY = "Spectral Decoy";
     // Others
     public const string SCREEN_MATERIALS_PREFIX = "MI_Doctor_Screen";
+    // Messages
+    public const string MSG_INFORMATION = "Information";
+    public const string MSG_DOCTOR_ITEM_TIP = "This item will help you find the Doctor's brain.";
 }

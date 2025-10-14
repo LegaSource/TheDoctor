@@ -1,6 +1,8 @@
-﻿using System.Collections;
+﻿using LegaFusionCore.Utilities;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using TheDoctor.Managers;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -8,8 +10,7 @@ namespace TheDoctor.Behaviours.MapObjects;
 
 public class DoctorClone : NetworkBehaviour
 {
-    private void Start()
-        => StartCoroutine(AttractEnemiesCoroutine());
+    private void Start() => StartCoroutine(AttractEnemiesCoroutine());
 
     public IEnumerator AttractEnemiesCoroutine()
     {
@@ -39,9 +40,13 @@ public class DoctorClone : NetworkBehaviour
             timePassed += Time.deltaTime;
         }
 
-        enemies.Where(e => Vector3.Distance(e.transform.position, explosionPosition) <= 5f)
-            .ToList()
-            .ForEach(e => e.HitEnemyOnLocalClient(force: 1));
+        if (LFCUtilities.IsServer)
+        {
+            enemies.Where(e => Vector3.Distance(e.transform.position, explosionPosition) <= 5f)
+                .ToList()
+                .ForEach(e => e.HitEnemyOnLocalClient(force: ConfigManager.spectralDecoyDamage.Value));
+        }
+
         SpawnParticle(explosionPosition);
         Destroy(gameObject);
     }
