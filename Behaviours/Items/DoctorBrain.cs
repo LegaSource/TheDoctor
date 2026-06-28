@@ -1,5 +1,4 @@
-﻿using LegaFusionCore.Utilities;
-using TheDoctor.Managers;
+﻿using TheDoctor.Managers;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -7,18 +6,12 @@ namespace TheDoctor.Behaviours.Items;
 
 public class DoctorBrain : PhysicsProp
 {
-    public override void Start()
+    public void InitializeForServer()
     {
-        base.Start();
-
-        if (ConfigManager.brainSpecialAbility.Value) LFCUtilities.SetAddonComponent<SpectralDecoy>(this, Constants.SPECTRAL_DECOY);
-        if (LFCUtilities.IsServer)
-        {
-            int value = Random.Range(ConfigManager.brainMinValue.Value, ConfigManager.brainMaxValue.Value);
-            SetScrapValueEveryoneRpc(value);
-        }
+        int value = Random.Range(ConfigManager.brainMinValue.Value, ConfigManager.brainMaxValue.Value);
+        InitializeEveryoneRpc(value);
     }
 
     [Rpc(SendTo.Everyone, RequireOwnership = false)]
-    public void SetScrapValueEveryoneRpc(int value) => SetScrapValue(value);
+    public void InitializeEveryoneRpc(int value) => SetScrapValue(value);
 }

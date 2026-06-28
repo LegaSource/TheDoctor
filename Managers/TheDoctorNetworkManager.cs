@@ -3,7 +3,7 @@ using Unity.Netcode;
 
 namespace TheDoctor.Managers;
 
-internal class TheDoctorNetworkManager : NetworkBehaviour
+public class TheDoctorNetworkManager : NetworkBehaviour
 {
     public static TheDoctorNetworkManager Instance;
 

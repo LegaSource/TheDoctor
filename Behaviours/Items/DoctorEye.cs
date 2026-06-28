@@ -47,24 +47,24 @@ public class DoctorEye : DoctorItem
     public override void ItemDeactivate()
     {
         base.ItemDeactivate();
-        doctorBrain.SwitchCamera(true);
+        doctorBrain?.SwitchCamera(true);
     }
 
     public override void PocketItem()
     {
-        doctorBrain.SwitchCamera(true);
+        doctorBrain?.SwitchCamera(true);
         base.PocketItem();
     }
 
     public override void DiscardItem()
     {
-        doctorBrain.SwitchCamera(true);
+        doctorBrain?.SwitchCamera(true);
         base.DiscardItem();
     }
 
     public override void OnDestroy()
     {
-        doctorBrain.SwitchCamera(true);
+        doctorBrain?.SwitchCamera(true);
         base.OnDestroy();
     }
 }

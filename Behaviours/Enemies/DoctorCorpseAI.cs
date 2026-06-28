@@ -116,15 +116,9 @@ public class DoctorCorpseAI : EnemyAI
 
         switch (currentBehaviourStateIndex)
         {
-            case (int)State.FREEZING:
-                DoFreezing();
-                break;
-            case (int)State.SCANNING:
-                DoScanning();
-                break;
-            case (int)State.CHASING:
-                DoChasing();
-                break;
+            case (int)State.FREEZING: DoFreezing(); break;
+            case (int)State.SCANNING: DoScanning(); break;
+            case (int)State.CHASING: DoChasing(); break;
         }
     }
 

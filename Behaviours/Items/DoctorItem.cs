@@ -95,7 +95,7 @@ public class DoctorItem : PhysicsProp
     {
         hasBeenUsed = true;
         isTracking = false;
-        doctorBrain.canLoseChase = true;
+        if (doctorBrain != null) doctorBrain.canLoseChase = true;
         SetControlTipsForItem();
     }
 }

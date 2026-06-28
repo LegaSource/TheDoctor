@@ -2,6 +2,7 @@
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using LegaFusionCore.Managers;
 using LethalLib.Modules;
 using System;
 using System.Collections.Generic;
@@ -19,7 +20,7 @@ public class TheDoctor : BaseUnityPlugin
 {
     internal const string modGUID = "Lega.TheDoctor";
     internal const string modName = "The Doctor";
-    internal const string modVersion = "1.0.3";
+    internal const string modVersion = "1.0.6";
 
     private readonly Harmony harmony = new Harmony(modGUID);
     private static readonly AssetBundle bundle = AssetBundle.LoadFromFile(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "thedoctor"));
@@ -40,7 +41,6 @@ public class TheDoctor : BaseUnityPlugin
     public static GameObject doctorClone;
 
     // Particles
-    public static GameObject darkExplosionParticle;
     public static GameObject electroExplosionParticle;
 
     // Audios
@@ -61,8 +61,8 @@ public class TheDoctor : BaseUnityPlugin
         NetcodePatcher();
         LoadEnemies();
         LoadItems();
-        LoadGameObjects();
         LoadMaterials();
+        LoadNetworkPrefabs();
 
         harmony.PatchAll(typeof(StartOfRoundPatch));
     }
@@ -112,42 +112,9 @@ public class TheDoctor : BaseUnityPlugin
 
     public void LoadItems()
     {
-        doctorHeart = RegisterItem(typeof(DoctorHeart), bundle.LoadAsset<Item>("Assets/DoctorHeart/DoctorHeartItem.asset"));
-        doctorEye = RegisterItem(typeof(DoctorEye), bundle.LoadAsset<Item>("Assets/DoctorEye/DoctorEyeItem.asset"));
-        doctorBrain = RegisterItem(typeof(DoctorBrain), bundle.LoadAsset<Item>("Assets/DoctorBrain/DoctorBrainItem.asset"));
-    }
-
-    public Item RegisterItem(Type type, Item item)
-    {
-        if (item.spawnPrefab.GetComponent(type) == null)
-        {
-            PhysicsProp script = item.spawnPrefab.AddComponent(type) as PhysicsProp;
-            script.grabbable = true;
-            script.grabbableToEnemies = true;
-            script.itemProperties = item;
-        }
-
-        NetworkPrefabs.RegisterNetworkPrefab(item.spawnPrefab);
-        Utilities.FixMixerGroups(item.spawnPrefab);
-        Items.RegisterItem(item);
-
-        return item;
-    }
-
-    public void LoadGameObjects()
-    {
-        darkExplosionParticle = RegisterGameObject("Assets/Particles/DarkExplosionParticle.prefab");
-        electroExplosionParticle = RegisterGameObject("Assets/Particles/ElectroExplosionParticle.prefab");
-        doctorClone = RegisterGameObject("Assets/DoctorClone/DoctorClone.prefab");
-        doctorCloneAudio = RegisterGameObject("Assets/Audios/Assets/DoctorCloneAudio.prefab");
-    }
-
-    public GameObject RegisterGameObject(string path)
-    {
-        GameObject gameObject = bundle.LoadAsset<GameObject>(path);
-        NetworkPrefabs.RegisterNetworkPrefab(gameObject);
-        Utilities.FixMixerGroups(gameObject);
-        return gameObject;
+        doctorHeart = LFCObjectsManager.RegisterObject(typeof(DoctorHeart), bundle.LoadAsset<Item>("Assets/DoctorHeart/DoctorHeartItem.asset"));
+        doctorEye = LFCObjectsManager.RegisterObject(typeof(DoctorEye), bundle.LoadAsset<Item>("Assets/DoctorEye/DoctorEyeItem.asset"));
+        doctorBrain = LFCObjectsManager.RegisterObject(typeof(DoctorBrain), bundle.LoadAsset<Item>("Assets/DoctorBrain/DoctorBrainItem.asset"));
     }
 
     public static void LoadMaterials()
@@ -155,5 +122,21 @@ public class TheDoctor : BaseUnityPlugin
         inertScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Inert.mat");
         scanningScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Scanning.mat");
         foundScreen = bundle.LoadAsset<Material>("Assets/DoctorCorpseAI/Materials/MI_Doctor_Screen_Found.mat");
+    }
+
+    public static void LoadNetworkPrefabs()
+    {
+        HashSet<GameObject> gameObjects =
+        [
+            (electroExplosionParticle = bundle.LoadAsset<GameObject>("Assets/Particles/ElectroExplosionParticle.prefab")),
+            (doctorClone = bundle.LoadAsset<GameObject>("Assets/DoctorClone/DoctorClone.prefab")),
+            (doctorCloneAudio = bundle.LoadAsset<GameObject>("Assets/Audios/Assets/DoctorCloneAudio.prefab"))
+        ];
+
+        foreach (GameObject gameObject in gameObjects)
+        {
+            NetworkPrefabs.RegisterNetworkPrefab(gameObject);
+            Utilities.FixMixerGroups(gameObject);
+        }
     }
 }

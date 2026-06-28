@@ -1,10 +1,10 @@
 ﻿using GameNetcodeStuff;
-using LegaFusionCore.Behaviours.Shaders;
 using LegaFusionCore.Managers;
 using LegaFusionCore.Utilities;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using TheDoctor.Behaviours.Items;
 using TheDoctor.Managers;
 using Unity.Netcode;
 using UnityEngine;
@@ -290,7 +290,9 @@ public class DoctorBrainAI : EnemyAI
         if (LFCUtilities.IsServer)
         {
             base.KillEnemy(destroy);
-            _ = LFCObjectsManager.SpawnObjectForServer(TheDoctor.doctorBrain.spawnPrefab, transform.position + (Vector3.up * 0.5f));
+
+            DoctorBrain doctorBrain = LFCObjectsManager.SpawnObjectForServer(TheDoctor.doctorBrain.spawnPrefab, transform.position + (Vector3.up * 0.5f)) as DoctorBrain;
+            doctorBrain.InitializeForServer();
         }
     }
 
@@ -306,11 +308,11 @@ public class DoctorBrainAI : EnemyAI
         if (!switchingBack)
         {
             cameraPivot.transform.LookAt(player.transform.position);
-            CustomPassManager.SetupAuraForObjects([player.gameObject], LegaFusionCore.LegaFusionCore.wallhackShader, TheDoctor.modName, Color.yellow);
-            CustomPassManager.SetupAuraForObjects(corpses.Select(c => c.gameObject).ToArray(), LegaFusionCore.LegaFusionCore.wallhackShader, TheDoctor.modName, Color.red);
+            LFCCustomPassManager.SetupAuraForObjects([player.gameObject], LegaFusionCore.LegaFusionCore.wallhackShader, TheDoctor.modName, Color.yellow);
+            LFCCustomPassManager.SetupAuraForObjects(corpses.Select(c => c.gameObject).ToArray(), LegaFusionCore.LegaFusionCore.wallhackShader, TheDoctor.modName, Color.red);
             return;
         }
-        CustomPassManager.RemoveAuraByTag(TheDoctor.modName);
+        LFCCustomPassManager.RemoveAuraByTag(TheDoctor.modName);
     }
 
     public void SpawnParticle(Vector3 explosionPosition)

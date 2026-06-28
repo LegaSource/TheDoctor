@@ -5,12 +5,12 @@ using UnityEngine;
 
 namespace TheDoctor.Patches;
 
-internal class StartOfRoundPatch
+public class StartOfRoundPatch
 {
     [HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.Start))]
     [HarmonyBefore(["evaisa.lethallib"])]
     [HarmonyPostfix]
-    private static void StartRound(ref StartOfRound __instance)
+    public static void StartRound(ref StartOfRound __instance)
     {
         if (NetworkManager.Singleton.IsHost && TheDoctorNetworkManager.Instance == null)
         {

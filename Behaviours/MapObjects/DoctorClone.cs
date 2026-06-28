@@ -1,4 +1,5 @@
-﻿using LegaFusionCore.Utilities;
+﻿using LegaFusionCore.Managers;
+using LegaFusionCore.Utilities;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,14 +48,7 @@ public class DoctorClone : NetworkBehaviour
                 .ForEach(e => e.HitEnemyOnLocalClient(force: ConfigManager.spectralDecoyDamage.Value));
         }
 
-        SpawnParticle(explosionPosition);
+        LFCGlobalManager.PlayParticle($"{LegaFusionCore.LegaFusionCore.modName}{LegaFusionCore.LegaFusionCore.darkExplosionParticle.name}", explosionPosition + transform.up, Quaternion.identity);
         Destroy(gameObject);
-    }
-
-    public void SpawnParticle(Vector3 explosionPosition)
-    {
-        GameObject particleObject = Instantiate(TheDoctor.darkExplosionParticle, explosionPosition + transform.up, Quaternion.identity);
-        ParticleSystem explosionParticle = particleObject.GetComponent<ParticleSystem>();
-        Destroy(particleObject, explosionParticle.main.duration + explosionParticle.main.startLifetime.constantMax);
     }
 }
